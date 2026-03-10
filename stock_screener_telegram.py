@@ -157,17 +157,42 @@ def build_grid(batch: list[tuple[str, bytes]]) -> bytes:
     return buf.read()
 
 
+# ---------- Ticker list with TradingView links ----------
+
+def send_ticker_list(rows: list[dict], total: int, shown: int, today: str):
+    """Send a message with all tickers as clickable TradingView links."""
+    lines = [f"📊 <b>Stock Screener — {today}</b>\n"
+             f"✅ נמצאו <b>{total}</b> מניות  |  מוצגות <b>{shown}</b>\n"
+             f"פילטרים: Cap&gt;2B · Vol&gt;1M · SMA50↑ · SMA200↑ · RSI&lt;50\n"
+             f"🔵 SMA50  |  🟠 SMA200\n\n"
+             f"📋 <b>לחץ על טיקר לפתיחה ב-TradingView:</b>\n"]
+
+    for row in rows:
+        ticker = row["Ticker"]
+        rsi    = row.get("RSI", "—")
+        price  = row.get("Price", "—")
+        url    = f"https://www.tradingview.com/chart/?symbol={ticker}"
+        lines.append(f'• <a href="{url}">{ticker}</a>  ${price}  RSI: {rsi}')
+
+    # Telegram message limit is 4096 chars — split if needed
+    full_text = "\n".join(lines)
+    chunk_size = 4000
+    for i in range(0, len(full_text), chunk_size):
+        send_message(full_text[i:i + chunk_size])
+
+
 # ---------- Main ----------
 
 def main():
     today = date.today().strftime("%d/%m/%Y")
     print(f"📅 {today} — מריץ סקרינר...")
 
-    # 1. Finviz screener
-    screener  = Screener(filters=FILTERS, table="Technical", order="ticker")
-    all_tickers = [row["Ticker"] for row in screener]
-    total     = len(all_tickers)
-    tickers   = all_tickers[:MAX_CHARTS]
+    # 1. Finviz screener (table=Technical for RSI + price data)
+    screener     = Screener(filters=FILTERS, table="Technical", order="ticker")
+    all_rows     = list(screener)
+    total        = len(all_rows)
+    rows         = all_rows[:MAX_CHARTS]
+    tickers      = [r["Ticker"] for r in rows]
 
     print(f"✅ נמצאו {total} מניות | מציג {len(tickers)}")
 
@@ -175,14 +200,8 @@ def main():
         send_message(f"📊 <b>Stock Screener — {today}</b>\n\nלא נמצאו מניות לפי הפילטרים.")
         return
 
-    # 2. Summary message
-    send_message(
-        f"📊 <b>Stock Screener — {today}</b>\n\n"
-        f"✅ נמצאו <b>{total}</b> מניות\n"
-        f"📈 מוצגות: <b>{len(tickers)}</b>\n\n"
-        f"🔵 SMA50  |  🟠 SMA200\n"
-        f"פילטרים: Cap>2B · Vol>1M · SMA50↑ · SMA200↑ · RSI<50"
-    )
+    # 2. Ticker list with TradingView links
+    send_ticker_list(rows, total, len(tickers), today)
 
     # 3. Render charts
     style = make_style()
@@ -193,7 +212,7 @@ def main():
         if result:
             charts.append(result)
 
-    # 4. Send in pages
+    # 4. Send grid pages
     pages = [charts[i:i + PAGE_SIZE] for i in range(0, len(charts), PAGE_SIZE)]
     for idx, page in enumerate(pages, 1):
         print(f"  📤 שולח עמוד {idx}/{len(pages)}...")
