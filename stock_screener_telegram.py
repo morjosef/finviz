@@ -43,7 +43,7 @@ def send_photo(image_bytes: bytes, caption: str = ""):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     resp = requests.post(
         url,
-        data={"chat_id": CHAT_ID, "caption": caption},
+        data={"chat_id": CHAT_ID, "caption": caption, "parse_mode": "HTML"},
         files={"photo": ("chart.png", image_bytes, "image/png")},
         timeout=60,
     )
@@ -157,28 +157,26 @@ def build_grid(batch: list[tuple[str, bytes]]) -> bytes:
     return buf.read()
 
 
-# ---------- Ticker list with TradingView links ----------
+# ---------- Caption builder ----------
 
-def send_ticker_list(rows: list[dict], total: int, shown: int, today: str):
-    """Send a message with all tickers as clickable TradingView links."""
-    lines = [f"📊 <b>Stock Screener — {today}</b>\n"
-             f"✅ נמצאו <b>{total}</b> מניות  |  מוצגות <b>{shown}</b>\n"
-             f"פילטרים: Cap&gt;2B · Vol&gt;1M · SMA50↑ · SMA200↑ · RSI&lt;50\n"
-             f"🔵 SMA50  |  🟠 SMA200\n\n"
-             f"📋 <b>לחץ על טיקר לפתיחה ב-TradingView:</b>\n"]
+def build_caption(page: list[tuple[str, bytes]], rows_map: dict,
+                  idx: int, total_pages: int, total: int, shown: int, today: str) -> str:
+    """Build an HTML caption with TradingView links for each ticker in the page."""
+    ticker_links = []
+    for ticker, _ in page:
+        url = f"https://www.tradingview.com/chart/?symbol={ticker}"
+        row = rows_map.get(ticker, {})
+        price = row.get("Price", "—")
+        rsi   = row.get("RSI", "—")
+        ticker_links.append(f'<a href="{url}">{ticker}</a> ${price} RSI:{rsi}')
 
-    for row in rows:
-        ticker = row["Ticker"]
-        rsi    = row.get("RSI", "—")
-        price  = row.get("Price", "—")
-        url    = f"https://www.tradingview.com/chart/?symbol={ticker}"
-        lines.append(f'• <a href="{url}">{ticker}</a>  ${price}  RSI: {rsi}')
+    header = ""
+    if idx == 1:
+        header = (f"📊 <b>Stock Screener — {today}</b>\n"
+                  f"✅ {total} מניות | מוצגות {shown} | 🔵SMA50 🟠SMA200\n\n")
 
-    # Telegram message limit is 4096 chars — split if needed
-    full_text = "\n".join(lines)
-    chunk_size = 4000
-    for i in range(0, len(full_text), chunk_size):
-        send_message(full_text[i:i + chunk_size])
+    page_line = f"עמוד {idx}/{total_pages}\n"
+    return header + page_line + " · ".join(ticker_links)
 
 
 # ---------- Main ----------
@@ -200,10 +198,9 @@ def main():
         send_message(f"📊 <b>Stock Screener — {today}</b>\n\nלא נמצאו מניות לפי הפילטרים.")
         return
 
-    # 2. Ticker list with TradingView links
-    send_ticker_list(rows, total, len(tickers), today)
+    rows_map = {r["Ticker"]: r for r in rows}
 
-    # 3. Render charts
+    # 2. Render charts
     style = make_style()
     charts = []
     for ticker in tickers:
@@ -212,12 +209,13 @@ def main():
         if result:
             charts.append(result)
 
-    # 4. Send grid pages
+    # 3. Send grid pages with linked captions
     pages = [charts[i:i + PAGE_SIZE] for i in range(0, len(charts), PAGE_SIZE)]
     for idx, page in enumerate(pages, 1):
         print(f"  📤 שולח עמוד {idx}/{len(pages)}...")
         grid_bytes = build_grid(page)
-        caption    = f"עמוד {idx}/{len(pages)}  |  {', '.join(t for t, _ in page)}"
+        caption    = build_caption(page, rows_map, idx, len(pages),
+                                   total, len(tickers), today)
         send_photo(grid_bytes, caption)
 
     print("✅ הושלם!")
