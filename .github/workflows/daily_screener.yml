@@ -2,8 +2,8 @@ name: Daily Stock Screener → Telegram
 
 on:
   schedule:
-    # רץ בימי חול בשעה 15:30 UTC = 17:30 ישראל (30 דקות אחרי פתיחת וול סטריט)
-    - cron: "30 13 * * 1-5"
+    # רץ בימי חול בשעה 21:30 UTC = 23:30 ישראל
+    - cron: "30 21 * * 1-5"
   workflow_dispatch:
     # כפתור הרצה ידנית ב-GitHub (שימושי לבדיקות)
 
