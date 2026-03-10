@@ -1,0 +1,33 @@
+name: Daily Stock Screener → Telegram
+
+on:
+  schedule:
+    # רץ בימי חול בשעה 15:30 UTC = 17:30 ישראל (30 דקות אחרי פתיחת וול סטריט)
+    - cron: "30 13 * * 1-5"
+  workflow_dispatch:
+    # כפתור הרצה ידנית ב-GitHub (שימושי לבדיקות)
+
+jobs:
+  run-screener:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install finviz yfinance mplfinance requests pandas matplotlib
+
+      - name: Run screener and send to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python stock_screener_telegram.py
