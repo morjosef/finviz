@@ -5,6 +5,7 @@ Runs automatically via GitHub Actions every weekday.
 
 import os
 import io
+import json
 import requests
 import pandas as pd
 import yfinance as yf
@@ -13,17 +14,35 @@ import matplotlib.pyplot as plt
 from finviz.screener import Screener
 from datetime import date
 
-# ========== הגדרות ==========
-FILTERS = [
-    "cap_midover",      # שווי שוק > $2B
-    "sh_avgvol_o1000",  # ווליום ממוצע > 1M
-    "ta_sma50_pa",      # מחיר מעל SMA 50
-    "ta_sma200_pa",     # מחיר מעל SMA 200
-    "ta_rsi_u50",       # RSI < 50
-]
-PERIOD    = "6mo"   # תקופת גרף
-MAX_CHARTS = 100    # מניות מקסימום לשליחה
-PAGE_SIZE  = 12     # מניות בכל תמונה (4 שורות × 3 עמודות)
+# ========== טעינת הגדרות ==========
+def load_settings() -> dict:
+    try:
+        with open("settings.json") as f:
+            return json.load(f)
+    except Exception:
+        return {"rsi_threshold": 50, "sma50": "above", "sma200": "above"}
+
+def build_filters(s: dict) -> list:
+    filters = ["cap_midover", "sh_avgvol_o1000"]
+    rsi = s.get("rsi_threshold", 50)
+    filters.append(f"ta_rsi_u{rsi}")
+    sma50 = s.get("sma50", "above")
+    if sma50 == "above":
+        filters.append("ta_sma50_pa")
+    elif sma50 == "below":
+        filters.append("ta_sma50_pb")
+    sma200 = s.get("sma200", "above")
+    if sma200 == "above":
+        filters.append("ta_sma200_pa")
+    elif sma200 == "below":
+        filters.append("ta_sma200_pb")
+    return filters
+
+SETTINGS   = load_settings()
+FILTERS    = build_filters(SETTINGS)
+PERIOD     = "6mo"
+MAX_CHARTS = 100
+PAGE_SIZE  = 12
 COLS       = 3
 # ==============================
 

@@ -1,0 +1,6 @@
+{
+  "rsi_threshold": 50,
+  "sma50": "above",
+  "sma200": "above",
+  "last_update_id": 0
+}
