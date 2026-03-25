@@ -36,8 +36,8 @@ PAGE_SIZE = 12           # charts per grid image
 COLS = 3
 # ============================
 
-BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-CHAT_ID   = os.environ["BREAKOUT_CHAT_ID"]
+BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"].strip()
+CHAT_ID   = os.environ["BREAKOUT_CHAT_ID"].strip()
 
 
 # ─────────────────────────── Telegram ───────────────────────────
