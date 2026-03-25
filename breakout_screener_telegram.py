@@ -53,7 +53,7 @@ def send_message(text: str):
 def send_photo(image_bytes: bytes, caption: str = ""):
     resp = requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
-        data={"chat_id": CHAT_ID, "caption": caption},
+        data={"chat_id": CHAT_ID, "caption": caption, "parse_mode": "HTML"},
         files={"photo": ("chart.png", image_bytes, "image/png")},
         timeout=60,
     )
@@ -288,7 +288,9 @@ def send_stock(r: dict, style):
 
     img = render_chart(ticker, bo, score, style)
     if img:
-        send_photo(img, caption=ticker)
+        # Universal Link — פותח את אפליקציית TradingView גם באייפון וגם באנדרואיד
+        caption = f'<a href="https://www.tradingview.com/chart/?symbol={ticker}">{ticker}</a>'
+        send_photo(img, caption=caption)
 
 
 # ─────────────────────────── Summary message ───────────────────────────
