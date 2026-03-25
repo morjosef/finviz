@@ -37,7 +37,7 @@ COLS = 3
 # ============================
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"].strip()
-CHAT_ID   = "-1003550920585"
+CHAT_ID   = os.environ["TELEGRAM_CHAT_ID"].strip()
 
 
 # ─────────────────────────── Telegram ───────────────────────────
