@@ -204,7 +204,7 @@ def make_style():
     )
 
 
-def render_chart(ticker: str, breakout: dict, score: int, style) -> tuple[str, bytes] | None:
+def render_chart(ticker: str, breakout: dict, score: int, style) -> bytes | None:
     """Render candlestick chart with the broken resistance line marked."""
     try:
         data = yf.download(ticker, period=PERIOD, interval="1d",
@@ -218,8 +218,8 @@ def render_chart(ticker: str, breakout: dict, score: int, style) -> tuple[str, b
         data = data[["Open", "High", "Low", "Close", "Volume"]].copy()
         data.index = pd.DatetimeIndex(data.index)
 
-        close  = data["Close"]
-        plots  = []
+        close = data["Close"]
+        plots = []
 
         if close.rolling(20).mean().notna().any():
             plots.append(mpf.make_addplot(close.rolling(20).mean(),
@@ -228,71 +228,67 @@ def render_chart(ticker: str, breakout: dict, score: int, style) -> tuple[str, b
             plots.append(mpf.make_addplot(close.rolling(150).mean(),
                                           color="#ff6d00", width=1.0))
 
-        # Resistance line (horizontal)
         resistance_line = pd.Series(breakout["level"], index=data.index)
         plots.append(mpf.make_addplot(resistance_line,
                                       color="#ffcc00", width=1.2,
                                       linestyle="--", alpha=0.8))
 
-        label = (f"\n{ticker}  ⭐{score}/6  "
+        label = (f"\n{ticker}  {score}/6  "
                  f"Vol {breakout['volume_ratio']:.1f}x  "
                  f"{'Today' if breakout['days_ago']==0 else str(breakout['days_ago'])+'d ago'}")
 
-        kwargs = dict(
-            type="candle", style=style, volume=True,
-            title=label, figsize=(5, 3.2),
-            tight_layout=True, returnfig=True,
-            addplot=plots,
-        )
-
-        fig, _ = mpf.plot(data, **kwargs)
+        fig, _ = mpf.plot(data, type="candle", style=style, volume=True,
+                          title=label, figsize=(10, 6),
+                          tight_layout=True, returnfig=True, addplot=plots)
 
         buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=90,
+        fig.savefig(buf, format="png", dpi=100,
                     bbox_inches="tight", facecolor="#131722")
         plt.close(fig)
         buf.seek(0)
-        return ticker, buf.read()
+        return buf.read()
 
     except Exception as e:
         print(f"  ❌ {ticker}: {e}")
         return None
 
 
-def build_grid(batch: list[tuple[str, bytes]]) -> bytes:
-    n    = len(batch)
-    rows = max(1, (n + COLS - 1) // COLS)
+def send_document(file_bytes: bytes, filename: str, caption: str = ""):
+    resp = requests.post(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument",
+        data={"chat_id": CHAT_ID, "caption": caption, "parse_mode": "HTML"},
+        files={"document": (filename, file_bytes, "text/html")},
+        timeout=60,
+    )
+    if not resp.ok:
+        print(f"  ⚠️  Telegram doc error: {resp.text}")
 
-    fig, axes = plt.subplots(rows, COLS,
-                             figsize=(COLS * 5.5, rows * 3.5),
-                             facecolor="#0d1117")
-    fig.patch.set_facecolor("#0d1117")
 
-    if rows == 1 and COLS == 1:
-        axes = [[axes]]
-    elif rows == 1:
-        axes = [axes]
-    elif COLS == 1:
-        axes = [[ax] for ax in axes]
+def send_stock(r: dict, style):
+    """Send a single stock as: text message + PNG chart."""
+    ticker  = r["ticker"]
+    score   = r["score"]
+    bo      = r["breakout"]
+    reasons = r["reasons"]
+    url     = f"https://www.tradingview.com/chart/?symbol={ticker}"
 
-    for i, (_, img_bytes) in enumerate(batch):
-        r, c = i // COLS, i % COLS
-        img_arr = plt.imread(io.BytesIO(img_bytes))
-        axes[r][c].imshow(img_arr)
-        axes[r][c].axis("off")
+    days_str = "היום" if bo["days_ago"] == 0 else f"{bo['days_ago']} ימים"
 
-    for i in range(n, rows * COLS):
-        r, c = i // COLS, i % COLS
-        axes[r][c].set_visible(False)
+    text = (
+        f'<a href="{url}">{ticker}</a> — ${bo["current_close"]:.2f}\n'
+        f'ציון מיכה {score}/6\n\n'
+        f'פריצה: {days_str} | Vol {bo["volume_ratio"]:.1f}x\n'
+        f'רמת פריצה: ${bo["level"]:.2f}\n\n'
+    )
+    for reason in reasons:
+        text += f'{reason}\n'
+    text += f'\n<a href="{url}">פתח ב-TradingView</a>'
 
-    plt.subplots_adjust(hspace=0.06, wspace=0.04)
+    send_message(text)
 
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=110,
-                bbox_inches="tight", facecolor="#0d1117")
-    plt.close(fig)
-    buf.seek(0)
-    return buf.read()
+    img = render_chart(ticker, bo, score, style)
+    if img:
+        send_photo(img, caption=ticker)
 
 
 # ─────────────────────────── Summary message ───────────────────────────
@@ -301,30 +297,11 @@ def send_summary(results: list[dict], today: str):
     lines = [
         f"🚀 <b>Breakout Screener — {today}</b>\n"
         f"✅ <b>{len(results)}</b> מניות פרצו כלפי מעלה\n"
-        f"פילטרים: Cap&gt;2B · Vol&gt;1M · SMA50↑ · SMA200↑ · ווליום פריצה ≥1.5x\n"
-        f"🟡 קו צהוב = רמת התנגדות שנפרצה  |  🔵 MA20  |  🟠 MA150\n\n"
-        f"📋 <b>מניות (ממוינות לפי ציון):</b>\n"
+        f"Cap&gt;2B · Vol&gt;1M · SMA50 · SMA200 · ווליום פריצה ≥1.5x\n"
+        f"🔵 MA20  |  🟠 MA150  |  🟡 רמת פריצה\n"
     ]
-
-    for r in results:
-        ticker = r["ticker"]
-        score  = r["score"]
-        bo     = r["breakout"]
-        url    = f"https://www.tradingview.com/chart/?symbol={ticker}"
-        stars  = "⭐" * score
-        lines.append(
-            f'• <a href="{url}">{ticker}</a>  '
-            f'${bo["current_close"]:.2f}  '
-            f'ציון {score}/6 {stars}  '
-            f'Vol {bo["volume_ratio"]:.1f}x  '
-            f'{"היום" if bo["days_ago"]==0 else str(bo["days_ago"])+" ימים"}'
-        )
-        if r["reasons"]:
-            lines.append(f'  └ {" · ".join(r["reasons"][:3])}')
-
     full_text = "\n".join(lines)
-    for i in range(0, len(full_text), 4000):
-        send_message(full_text[i:i + 4000])
+    send_message(full_text)
 
 
 # ─────────────────────────── Main ───────────────────────────
@@ -386,25 +363,17 @@ def main():
     # Sort by score descending, then volume ratio
     results.sort(key=lambda x: (x["score"], x["breakout"]["volume_ratio"]), reverse=True)
 
-    # 3. Send summary message
+    # 3. Send summary header
     send_summary(results, today)
 
-    # 4. Render and send charts
-    style  = make_style()
-    charts = []
-
+    # 4. Send each stock individually
+    style = make_style()
     for r in results[:MAX_CHARTS]:
-        print(f"  📊 {r['ticker']}...")
-        result = render_chart(r["ticker"], r["breakout"], r["score"], style)
-        if result:
-            charts.append(result)
-
-    pages = [charts[i:i + PAGE_SIZE] for i in range(0, len(charts), PAGE_SIZE)]
-    for idx, page in enumerate(pages, 1):
-        print(f"  📤 שולח עמוד {idx}/{len(pages)}...")
-        grid_bytes = build_grid(page)
-        caption    = f"פריצות — עמוד {idx}/{len(pages)}  |  {', '.join(t for t, _ in page)}"
-        send_photo(grid_bytes, caption)
+        print(f"  📤 {r['ticker']}...")
+        try:
+            send_stock(r, style)
+        except Exception as e:
+            print(f"  ❌ {r['ticker']}: {e}")
 
     print("✅ הושלם!")
 
