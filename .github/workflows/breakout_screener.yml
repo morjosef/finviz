@@ -1,0 +1,33 @@
+name: Breakout Stock Screener → Telegram
+
+on:
+  schedule:
+    # רץ בימי חול בשעה 21:15 UTC = 23:15 ישראל
+    - cron: "15 21 * * 1-5"
+  workflow_dispatch:
+    # כפתור הרצה ידנית ב-GitHub (שימושי לבדיקות)
+
+jobs:
+  run-breakout-screener:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install finviz yfinance mplfinance requests pandas matplotlib scipy
+
+      - name: Run breakout screener and send to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          BREAKOUT_CHAT_ID: ${{ secrets.BREAKOUT_CHAT_ID }}
+        run: python breakout_screener_telegram.py
